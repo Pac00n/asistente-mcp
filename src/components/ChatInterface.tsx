@@ -1,13 +1,16 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { Message, ChatRequest, ChatResponse } from '@/types';
+import { Message, ChatRequest, ChatResponse, MessageRole } from '@/types';
 
 export default function ChatInterface() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [conversationId, setConversationId] = useState<string>(
+    () => `conv_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+  );
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -21,7 +24,12 @@ export default function ChatInterface() {
     e.preventDefault();
     if (!input.trim() || isLoading) return;
 
-    const userMessage: Message = { role: 'user', content: input };
+    const userMessage: Message = { 
+      role: 'user', 
+      content: input,
+      source: 'openai'
+    };
+    
     setMessages(prev => [...prev, userMessage]);
     setInput('');
     setIsLoading(true);
@@ -29,21 +37,50 @@ export default function ChatInterface() {
     try {
       const response = await fetch('/api/chat', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: input } as ChatRequest),
+        headers: { 
+          'Content-Type': 'application/json',
+          'X-Conversation-ID': conversationId
+        },
+        body: JSON.stringify({ 
+          message: input,
+          conversationId,
+          conversationHistory: messages
+            .filter(m => m.role !== 'system')
+            .map(({ role, content }) => ({ role, content }))
+        } as ChatRequest),
       });
 
       if (!response.ok) {
-        throw new Error('Error al obtener respuesta del asistente');
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Error al obtener respuesta del asistente');
       }
 
-      const data = await response.json() as ChatResponse;
-      setMessages(prev => [...prev, { role: 'assistant', content: data.response }]);
+      const data = await response.json();
+      console.log('Respuesta de la API:', data);
+      
+      // Extraer el mensaje de la respuesta
+      const assistantMessage = data.message;
+      
+      if (assistantMessage) {
+        setMessages(prev => [
+          ...prev, 
+          { 
+            role: 'assistant' as MessageRole, 
+            content: assistantMessage.content || 'No hay contenido en la respuesta',
+            source: 'openai',
+            tool_calls: assistantMessage.tool_calls
+          }
+        ]);
+      } else {
+        throw new Error('La respuesta del servidor no contiene un mensaje válido');
+      }
+      
     } catch (error) {
       console.error('Error:', error);
       setMessages(prev => [...prev, { 
         role: 'assistant', 
-        content: 'Lo siento, ha ocurrido un error al procesar tu solicitud.' 
+        content: `Lo siento, ha ocurrido un error: ${error instanceof Error ? error.message : 'Error desconocido'}`,
+        source: 'openai'
       }]);
     } finally {
       setIsLoading(false);
@@ -70,8 +107,8 @@ export default function ChatInterface() {
               <div
                 className={`max-w-xs lg:max-w-md px-4 py-2 rounded-lg ${
                   msg.role === 'user'
-                    ? 'bg-blue-500 text-white rounded-br-none'
-                    : 'bg-gray-200 text-gray-800 rounded-bl-none'
+                    ? 'bg-blue-500 text-white rounded-br-none ml-8'
+                    : 'bg-gray-200 text-gray-800 rounded-bl-none mr-8'
                 }`}
               >
                 <p className="whitespace-pre-wrap">{msg.content}</p>
