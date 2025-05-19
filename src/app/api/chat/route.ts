@@ -77,10 +77,110 @@ type ChatCompletionMessage = {
   tool_call_id?: string;
 };
 
-// Función para manejar la consulta de clima con MCP
+// Mapeo de ubicaciones conocidas para producción
+const KNOWN_LOCATIONS: Record<string, { name: string; latitude: number; longitude: number; country: string }> = {
+  'madrid': { name: 'Madrid', latitude: 40.4168, longitude: -3.7038, country: 'España' },
+  'barcelona': { name: 'Barcelona', latitude: 41.3888, longitude: 2.159, country: 'España' },
+  'valencia': { name: 'Valencia', latitude: 39.4699, longitude: -0.3763, country: 'España' },
+  'sevilla': { name: 'Sevilla', latitude: 37.3891, longitude: -5.9845, country: 'España' },
+  'zaragoza': { name: 'Zaragoza', latitude: 41.6488, longitude: -0.8891, country: 'España' },
+  'málaga': { name: 'Málaga', latitude: 36.7213, longitude: -4.4213, country: 'España' },
+  'murcia': { name: 'Murcia', latitude: 37.9922, longitude: -1.1307, country: 'España' },
+  'palma': { name: 'Palma de Mallorca', latitude: 39.5696, longitude: 2.6502, country: 'España' },
+  'las palmas': { name: 'Las Palmas de Gran Canaria', latitude: 28.1235, longitude: -15.4363, country: 'España' },
+  'santa cruz de tenerife': { name: 'Santa Cruz de Tenerife', latitude: 28.4636, longitude: -16.2518, country: 'España' },
+  'parís': { name: 'París', latitude: 48.8566, longitude: 2.3522, country: 'Francia' },
+  'londres': { name: 'Londres', latitude: 51.5074, longitude: -0.1278, country: 'Reino Unido' },
+  'nueva york': { name: 'Nueva York', latitude: 40.7128, longitude: -74.0060, country: 'Estados Unidos' },
+  'tokio': { name: 'Tokio', latitude: 35.6762, longitude: 139.6503, country: 'Japón' }
+};
+
+// Mapeo de códigos de tiempo de Open-Meteo a condiciones en español
+const WEATHER_CODE_MAP: Record<number, string> = {
+  0: 'Despejado', 1: 'Mayormente despejado', 2: 'Parcialmente nublado', 3: 'Nublado',
+  45: 'Niebla', 48: 'Niebla escarchada', 51: 'Llovizna ligera', 53: 'Llovizna moderada',
+  55: 'Llovizna densa', 56: 'Llovizna helada ligera', 57: 'Llovizna helada densa',
+  61: 'Lluvia ligera', 63: 'Lluvia moderada', 65: 'Lluvia intensa',
+  66: 'Lluvia helada ligera', 67: 'Lluvia helada intensa', 71: 'Nieve ligera',
+  73: 'Nieve moderada', 75: 'Nieve intensa', 77: 'Granizo', 80: 'Lluvia ligera',
+  81: 'Lluvia moderada', 82: 'Lluvia muy intensa', 85: 'Nieve ligera', 86: 'Nieve intensa',
+  95: 'Tormenta', 96: 'Tormenta con granizo ligero', 99: 'Tormenta con granizo intenso'
+};
+
+// Función para obtener coordenadas de una ubicación
+function getCoordinates(location: string) {
+  const normalizedLocation = location.toLowerCase().trim();
+  
+  // Buscar coincidencia exacta primero
+  const exactMatch = KNOWN_LOCATIONS[normalizedLocation];
+  if (exactMatch) return exactMatch;
+  
+  // Buscar coincidencia parcial
+  const match = Object.entries(KNOWN_LOCATIONS).find(([key]) => 
+    normalizedLocation.includes(key) || key.includes(normalizedLocation)
+  );
+  
+  return match ? match[1] : null;
+}
+
+// Función para obtener el clima usando directamente Open-Meteo
+async function getWeatherFromOpenMeteo(location: string, unit: 'celsius' | 'fahrenheit' = 'celsius') {
+  const locationData = getCoordinates(location);
+  if (!locationData) {
+    throw new Error(`No se encontró información para la ubicación: ${location}`);
+  }
+
+  const { latitude, longitude, name, country } = locationData;
+  const response = await fetch(
+    `https://api.open-meteo.com/v1/forecast?` +
+    `latitude=${latitude}&longitude=${longitude}` +
+    `&current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m` +
+    `&timezone=auto` +
+    `&temperature_unit=${unit === 'celsius' ? 'celsius' : 'fahrenheit'}`
+  );
+
+  if (!response.ok) {
+    throw new Error(`Error al consultar el clima: ${response.status} ${response.statusText}`);
+  }
+
+  const data = await response.json();
+  const current = data.current;
+  
+  return {
+    location: `${name}, ${country}`,
+    temperature: current.temperature_2m,
+    apparent_temperature: current.apparent_temperature,
+    condition: WEATHER_CODE_MAP[current.weather_code] || 'Desconocido',
+    humidity: current.relative_humidity_2m,
+    wind_speed: current.wind_speed_10m,
+    units: unit === 'celsius' ? '°C' : '°F',
+    last_updated: new Date().toISOString()
+  };
+}
+
+// Función para manejar la consulta de clima
 async function getWeather(location: string, unit: 'celsius' | 'fahrenheit' = 'celsius'): Promise<string> {
+  // En producción, usar Open-Meteo directamente
+  if (process.env.NODE_ENV === 'production' || process.env.USE_OPEN_METEO === 'true') {
+    try {
+      console.log(`[Producción] Consultando clima para: ${location} usando Open-Meteo`);
+      const data = await getWeatherFromOpenMeteo(location, unit);
+      
+      return `El clima en ${data.location} es ${data.condition} con una temperatura de ${data.temperature}${data.units}. ` +
+             `Sensación térmica: ${data.apparent_temperature}${data.units}, Humedad: ${data.humidity}%, ` +
+             `Viento: ${data.wind_speed} km/h`;
+    } catch (error) {
+      console.error('Error al consultar Open-Meteo:', error);
+      // En caso de error, intentar con el servidor MCP si no estamos en producción
+      if (process.env.NODE_ENV === 'production') {
+        throw error;
+      }
+    }
+  }
+
+  // En desarrollo, usar el servidor MCP
   try {
-    console.log(`Consultando clima para: ${location}`);
+    console.log(`[Desarrollo] Consultando clima para: ${location} usando MCP`);
     const response = await fetch(`${MCP_SERVER_URL}/weather`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
