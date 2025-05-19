@@ -1,0 +1,25 @@
+vamos a probar primero si sigue funcionando, vamos a eje{
+  "name": "asistente-backend-service",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Servicio de backend para el asistente de IA",
+  "main": "api_chat_route/route.ts", // O el punto de entrada si se despliega como un servidor Node.js separado
+  "scripts": {
+    "start": "node mock_server/mock-mcp-server.js", // Ejemplo para iniciar el mock server
+    "dev:api": "echo "Ejecutar en un entorno Next.js o serverless""
+    // Aquí irían los scripts para desplegar o ejecutar el backend como un servicio
+  },
+  "dependencies": {
+    "openai": "^4.100.0", // Usar la versión de tu proyecto
+    "express": "^4.19.2", // Ejemplo, si mock-mcp-server.js usa express ^4 y no ^5
+    "cors": "^2.8.5",
+    "node-fetch": "^2.7.0" // Si es necesario en el entorno de despliegue del backend
+    // "next": "^14" // Solo si se despliega como parte de una app Next.js. Si es un backend aislado, no.
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "@types/express": "^4.17.21", // Ejemplo, si se usa Express
+    "@types/cors": "^2.8.17",
+    "typescript": "^5.0.0"
+  }
+}

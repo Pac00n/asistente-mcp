@@ -1,14 +1,17 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useRef, useEffect, useCallback } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { getAssistantById } from "@/lib/assistants";
-import { ArrowLeft, Send, Loader2 } from "lucide-react";
+import { getAssistantById } from "@/lib/assistants"; // Assuming this function exists and returns Assistant or null
+import { ArrowLeft, Send, Loader2, Paperclip, X, RefreshCw } from "lucide-react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "@/components/ui/tooltip";
+import Image from 'next/image';
+import ReactMarkdown from 'react-markdown';
+import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 
 // Tipos
 type Message = {
@@ -17,9 +20,19 @@ type Message = {
   content: string;
   timestamp: Date;
   isStreaming?: boolean;
+  imageBase64?: string | null;
 };
 
-// Estilos globales
+// Placeholder for Assistant type, replace with your actual type definition
+type Assistant = {
+  id: string;
+  name: string;
+  description?: string;
+  bgColor?: string;
+  // Add other properties your assistant object might have
+};
+
+// Estilos globales - Consider moving to a global CSS file if extensive
 const globalStyles = `
 @keyframes bounce-dot {
   0%, 80%, 100% { transform: translateY(0); }
@@ -31,7 +44,7 @@ const globalStyles = `
   font-size: 24px;
   line-height: 12px;
   font-weight: bold;
-  color: white;
+  color: white; /* Or inherit from parent */
 }
 .animated-dot:nth-child(1) { animation-delay: 0s; }
 .animated-dot:nth-child(2) { animation-delay: 0.2s; }
@@ -60,7 +73,7 @@ const globalStyles = `
   border: 2px solid rgba(255,255,255,0.2);
   transition: all 0.3s ease;
   color: white !important;
-  background-color: #2563eb;
+  background-color: #2563eb; /* Base color */
 }
 
 .btn-gradient-animated:hover {
@@ -72,10 +85,10 @@ const globalStyles = `
 .timestamp-outside {
   display: block;
   text-align: center;
-  font-size: 0.75rem;
-  color: #9ca3af;
-  margin-top: 0.25rem;
-  margin-bottom: 0.5rem;
+  font-size: 0.75rem; /* 12px */
+  color: #9ca3af; /* gray-400 */
+  margin-top: 0.25rem; /* 4px */
+  margin-bottom: 0.5rem; /* 8px */
 }
 `;
 
@@ -88,29 +101,47 @@ const AnimatedDots = () => (
   </span>
 );
 
+function formatAssistantMessage(content: string) {
+  // Implement your specific formatting logic here if needed
+  return content;
+}
+
 export default function ChatPage() {
   const router = useRouter();
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: '1',
-      role: 'assistant',
-      content: '¡Hola! Soy tu asistente MCP. ¿En qué puedo ayudarte hoy?',
-      timestamp: new Date(),
-    },
-  ]);
+  const searchParams = useSearchParams();
+  const assistantId = searchParams.get("id");
+
+  const [assistant, setAssistant] = useState<Assistant | null>(null);
+  const [imageBase64, setImageBase64] = useState<string | null>(null);
+  const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const [isLoading, setIsLoading] = useState(false);
   const [currentThreadId, setCurrentThreadId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const streamControllerRef = useRef<AbortController | null>(null);
-
-  // Lógica para la rotación del fondo (existente)
   const [rotation, setRotation] = useState(0);
+
+  useEffect(() => {
+    if (assistantId) {
+      // Ensure getAssistantById is robust and handles not found cases gracefully
+      const fetchedAssistant = getAssistantById(assistantId as string);
+      if (fetchedAssistant) {
+        setAssistant(fetchedAssistant);
+      } else {
+        setError("Asistente no encontrado. Verifica el ID proporcionado.");
+        // Optionally redirect or show a more specific message
+        // router.push('/assistants'); 
+      }
+    } else {
+      // setError("ID de asistente no proporcionado en la URL.");
+      // router.push('/assistants'); // Redirect if no ID, or handle as needed
+    }
+  }, [assistantId, router]);
+
+
   useEffect(() => {
     const handleScroll = () => {
       const scrollY = window.scrollY || window.pageYOffset;
@@ -136,6 +167,7 @@ export default function ChatPage() {
   }, [assistant]);
 
   useEffect(() => {
+    if (!assistantId || !assistant) return;
     try {
       const storedThreadId = localStorage.getItem(`threadId_${assistantId}`);
       if (storedThreadId) {
@@ -147,7 +179,7 @@ export default function ChatPage() {
             const messagesWithDates = parsedMessages.map((msg: any) => ({
               ...msg,
               timestamp: new Date(msg.timestamp),
-              isStreaming: false, // Ensure old messages are not streaming
+              isStreaming: false,
             }));
             setMessages(messagesWithDates);
           } catch (e) {
@@ -164,10 +196,10 @@ export default function ChatPage() {
       console.error("Error al inicializar el chat:", e);
       showWelcomeMessage();
     }
-  }, [assistantId, showWelcomeMessage]);
+  }, [assistantId, showWelcomeMessage, assistant]);
 
   useEffect(() => {
-    // Guardar solo mensajes que no estén en streaming activo y si hay un threadId
+    if (!assistantId || !assistant) return;
     const messagesToSave = messages.filter(msg => !msg.isStreaming);
     if (messagesToSave.length > 0 && currentThreadId && messagesToSave[0]?.id !== 'welcome') {
       try {
@@ -176,7 +208,7 @@ export default function ChatPage() {
         console.error("Error al guardar mensajes en localStorage:", e);
       }
     }
-  }, [messages, assistantId, currentThreadId]);
+  }, [messages, assistantId, currentThreadId, assistant]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -231,7 +263,6 @@ export default function ChatPage() {
           message: currentInput,
           imageBase64: currentImageBase64,
           threadId: currentThreadId,
-          // employeeToken: "some_token_if_needed" // Ejemplo si se necesitara
         }),
         signal,
       });
@@ -255,7 +286,7 @@ export default function ChatPage() {
         {
           id: assistantMessagePlaceholderId!,
           role: "assistant",
-          content: "", // Inicia vacío, se llenará con el stream
+          content: "",
           timestamp: new Date(),
           isStreaming: true,
         },
@@ -268,8 +299,9 @@ export default function ChatPage() {
         buffer += decoder.decode(value, { stream: true });
         let eolIndex;
         
-        // Procesar cada evento SSE (delimitado por '\n\n')
-        while ((eolIndex = buffer.indexOf('\n\n')) !== -1) {
+        while ((eolIndex = buffer.indexOf('
+
+')) !== -1) {
           const line = buffer.substring(0, eolIndex).trim();
           buffer = buffer.substring(eolIndex + 2);
 
@@ -280,15 +312,13 @@ export default function ChatPage() {
 
               if (event.threadId && event.threadId !== currentThreadId) {
                 setCurrentThreadId(event.threadId);
-                localStorage.setItem(`threadId_${assistantId}`, event.threadId);
+                if (assistantId) localStorage.setItem(`threadId_${assistantId}`, event.threadId);
               }
               
-              // Asegurarse que el threadId se establece incluso si es un hilo existente
               if (event.type === 'thread.info' && event.threadId && !currentThreadId) {
                 setCurrentThreadId(event.threadId);
-                localStorage.setItem(`threadId_${assistantId}`, event.threadId);
+                 if (assistantId) localStorage.setItem(`threadId_${assistantId}`, event.threadId);
               }
-
 
               switch (event.type) {
                 case 'thread.message.delta':
@@ -302,23 +332,20 @@ export default function ChatPage() {
                   }
                   break;
                 case 'thread.message.completed':
-                  // Actualizar el ID del mensaje al ID real de OpenAI y marcar como no streaming
                   setMessages(prev => prev.map(msg => 
                     msg.id === assistantMessagePlaceholderId 
                       ? { ...msg, content: accumulatedContent, isStreaming: false, id: event.data.id } 
                       : msg
                   ));
-                  assistantMessagePlaceholderId = null; // Resetea para el próximo mensaje
+                  assistantMessagePlaceholderId = null;
                   accumulatedContent = "";
                   break;
                 case 'thread.run.created':
-                  // Podrías usar esto para algún indicador específico si lo necesitas
                   console.log("Run created:", event.data.id);
-                  setIsLoading(true); // Asegurar que sigue cargando
+                  setIsLoading(true);
                   break;
                 case 'thread.run.completed':
                   setIsLoading(false);
-                  // Si el último mensaje del asistente aún estaba en streaming, marcarlo como completo
                   setMessages(prev => prev.map(msg =>
                     (msg.role === 'assistant' && msg.isStreaming)
                       ? { ...msg, isStreaming: false }
@@ -334,26 +361,25 @@ export default function ChatPage() {
                     setMessages(prev => prev.filter(msg => msg.id !== assistantMessagePlaceholderId));
                   }
                   break;
-                case 'error': // Errores enviados desde nuestro backend via SSE
+                case 'error':
                   setError(event.data.details || event.data.message || "Error de stream.");
                   setIsLoading(false);
                   if (assistantMessagePlaceholderId) {
                     setMessages(prev => prev.filter(msg => msg.id !== assistantMessagePlaceholderId));
                   }
                   break;
-                case 'stream.ended': // Evento personalizado para indicar fin del stream desde el backend
+                case 'stream.ended':
                   setIsLoading(false);
-                   // Si el último mensaje del asistente aún estaba en streaming, marcarlo como completo
                   setMessages(prev => prev.map(msg =>
                     (msg.role === 'assistant' && msg.isStreaming)
                       ? { ...msg, isStreaming: false }
                       : msg
                   ));
                   if (event.error) {
-                     setError(prevError => prevError || event.error); // No sobrescribir un error ya existente
+                     setError(prevError => prevError || event.error);
                   }
                   console.log("Stream ended from backend.");
-                  return; // Salir del bucle de lectura
+                  return; 
               }
             } catch (e) {
               console.error("Error parseando JSON del stream:", e, jsonData);
@@ -364,19 +390,15 @@ export default function ChatPage() {
     } catch (err: any) {
       if (err.name !== 'AbortError') {
         setError(err.message || "Error de conexión o enviando el mensaje.");
-        // Revertir mensaje de usuario si hay error antes de que el stream comience o por abortar.
          setMessages(prev => prev.filter(msg => msg.id !== userMessage.id));
-         setInput(currentInput); // Restaurar input
-         setImageBase64(currentImageBase64); // Restaurar imagen
+         setInput(currentInput);
+         setImageBase64(currentImageBase64);
       }
-      if (assistantMessagePlaceholderId) { // Limpiar placeholder si hubo error
+      if (assistantMessagePlaceholderId) {
         setMessages(prev => prev.filter(msg => msg.id !== assistantMessagePlaceholderId));
       }
     } finally {
-      // Solo set isLoading a false si no fue abortado mientras aún estaba cargando una respuesta de stream.
-      // La lógica de stream.ended o error/completed debería manejar isLoading=false.
-      // Esta es una salvaguarda.
-      if (!signal.aborted || messages.every(msg => !msg.isStreaming)) {
+      if (signal && (!signal.aborted || messages.every(msg => !msg.isStreaming))) {
          setIsLoading(false);
       }
       streamControllerRef.current = null;
@@ -394,9 +416,10 @@ export default function ChatPage() {
 
   const startNewConversation = () => {
     if (streamControllerRef.current) {
-      streamControllerRef.current.abort(); // Cancelar stream si está activo
+      streamControllerRef.current.abort();
       streamControllerRef.current = null;
     }
+    if (!assistantId) return;
     try {
       localStorage.removeItem(`threadId_${assistantId}`);
       localStorage.removeItem(`messages_${assistantId}`);
@@ -410,21 +433,52 @@ export default function ChatPage() {
     setIsLoading(false);
     showWelcomeMessage();
   };
-
-  if (!assistant) {
+  
+  // Initial loading state for assistant or if ID is missing
+  if (!assistantId) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-neutral-950">
         <Card className="w-full max-w-md bg-neutral-900 border-neutral-700 text-white relative z-10">
-          <CardHeader><CardTitle className="text-center text-white">Asistente no encontrado</CardTitle></CardHeader>
-          <CardContent className="text-center text-gray-300"><p>El asistente que buscas no existe o no está disponible.</p></CardContent>
-          <CardFooter className="flex justify-center"><Button asChild className="bg-blue-600 hover:bg-blue-700 text-white"><Link href="/assistants">Ver todos los asistentes</Link></Button></CardFooter>
+          <CardHeader><CardTitle className="text-center text-white">Asistente no especificado</CardTitle></CardHeader>
+          <CardContent className="text-center text-gray-300"><p>No se ha proporcionado un ID de asistente en la URL.</p></CardContent>
+          <CardFooter className="flex justify-center"><Button asChild className="bg-blue-600 hover:bg-blue-700 text-white"><Link href="/assistants">Seleccionar un Asistente</Link></Button></CardFooter>
         </Card>
       </div>
     );
   }
 
+  if (!assistant && !error) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-neutral-950">
+         <Loader2 className="h-8 w-8 animate-spin text-white" />
+         <p className="text-white ml-2">Cargando asistente...</p>
+      </div>
+    );
+  }
+
+  if (error && !assistant) { 
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-neutral-950">
+        <Card className="w-full max-w-md bg-neutral-900 border-neutral-700 text-white relative z-10">
+          <CardHeader><CardTitle className="text-center text-white">Error al Cargar Asistente</CardTitle></CardHeader>
+          <CardContent className="text-center text-gray-300"><p>{error}</p></CardContent>
+          <CardFooter className="flex justify-center"><Button asChild className="bg-blue-600 hover:bg-blue-700 text-white"><Link href="/assistants">Ver otros asistentes</Link></Button></CardFooter>
+        </Card>
+      </div>
+    );
+  }
+  
+  if (!assistant) { // Should not be reached if error handling above is correct, but as a safeguard
+      return (
+          <div className="flex items-center justify-center min-h-screen bg-neutral-950">
+              <p className="text-white">No se pudo cargar la información del asistente.</p>
+          </div>
+      );
+  }
+
   return (
     <div className="flex flex-col h-screen bg-neutral-950 text-white relative">
+      <style>{globalStyles}</style>
       <div 
         className="fixed inset-0 flex justify-center items-center z-0 pointer-events-none" 
         style={{filter:'blur(12px)', opacity:0.15}} 
@@ -449,7 +503,7 @@ export default function ChatPage() {
           )}
         </AnimatePresence>
         
-        <div className={`flex-1 overflow-y-auto p-4 sm:p-6 ${error ? "pt-24" : "pt-6"} pb-48 sm:pb-52`}> {/* Aumentado padding-bottom */}
+        <div className={`flex-1 overflow-y-auto p-4 sm:p-6 ${error ? "pt-24" : "pt-6"} pb-48 sm:pb-52`}>
           <div className="max-w-3xl mx-auto space-y-4">
             <AnimatePresence initial={false}>
               {messages.map((message, index) => (
@@ -458,7 +512,7 @@ export default function ChatPage() {
                   initial={{ opacity: 0, y: 20 }} 
                   animate={{ opacity: 1, y: 0 }} 
                   transition={{ duration: 0.3 }} 
-                  className={`flex ${message.role === "user" ? "justify-end" : "justify-start"} ${index === 0 && !error ? 'mt-4' : ''}`}
+                  className={`flex flex-col ${message.role === "user" ? "items-end" : "items-start"}`} // Use flex-col and items-end/start for alignment
                 >
                   <div className={`flex max-w-[85%] sm:max-w-[80%] ${message.role === "user" ? "flex-row-reverse" : "flex-row"}`}>
                     {message.role === "user" ? (
@@ -490,26 +544,24 @@ export default function ChatPage() {
                         )}
                       </div>
                     )}
-                    <div className="w-full flex justify-center">
-                      <span className="timestamp-outside">{formatTime(message.timestamp)}</span>
-                    </div>
-                    {message.id === "welcome" && <div className={`absolute -top-1 -right-1 h-2 w-2 rounded-full bg-blue-400 animate-ping ${message.content ? "" : "hidden"}`}></div>}
                   </div>
+                  <span className={`timestamp-outside ${message.role === "user" ? "text-right w-[85%] sm:w-[80%]" : "text-left w-[85%] sm:w-[80%]"}`}>{formatTime(message.timestamp)}</span> {/* Adjusted timestamp alignment */}
+                  {message.id === "welcome" && <div className={`absolute -top-1 -right-1 h-2 w-2 rounded-full bg-blue-400 animate-ping ${message.content ? "" : "hidden"}`}></div>}
                 </motion.div>
               ))}
             </AnimatePresence>
             {isLoading && !messages.some(m => m.role === 'assistant' && m.isStreaming) && (
               <motion.div 
                 initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
-                className="flex justify-start mt-4"
+                className="flex justify-start mt-4" // This will show "Conectando..." on the left
               >
-                <div className="flex items-center">
-                  <div className={`h-8 w-8 mr-2 sm:mr-3 ${assistant.bgColor || 'bg-sky-600'} text-white flex items-center justify-center rounded-full font-semibold flex-shrink-0 shadow-md`}>{assistant?.name.charAt(0)}</div>
-                  <div className="rounded-lg p-3 bg-neutral-800 border border-neutral-700 flex items-center shadow-md">
-                    <AnimatedDots />
-                    <span className="ml-2 text-sm text-gray-400">Conectando</span>
+                 <div className={`flex items-center max-w-[85%] sm:max-w-[80%]`}>
+                    <div className={`h-8 w-8 mr-2 sm:mr-3 ${assistant.bgColor || 'bg-sky-600'} text-white flex items-center justify-center rounded-full font-semibold flex-shrink-0 shadow-md`}>{assistant?.name.charAt(0)}</div>
+                    <div className="rounded-lg p-3 bg-neutral-800 border border-neutral-700 flex items-center shadow-md">
+                      <AnimatedDots />
+                      <span className="ml-2 text-sm text-gray-400">Conectando</span>
+                    </div>
                   </div>
-                </div>
               </motion.div>
             )}
             <div ref={messagesEndRef} />
@@ -539,6 +591,7 @@ export default function ChatPage() {
               </Button>
               <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" accept="image/*" disabled={isLoading} />
               <Input
+                ref={inputRef}
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 placeholder="Escribe tu mensaje..."
@@ -562,7 +615,7 @@ export default function ChatPage() {
               <Button
                 onClick={startNewConversation}
                 className="btn-gradient-animated flex items-center gap-2 px-5 py-2.5 rounded-full text-white font-bold shadow-xl hover:scale-105 focus:outline-none focus:ring-4 focus:ring-blue-500/50"
-                style={{ backgroundColor: '#2563eb' }} /* Añadir color base para asegurar visibilidad */
+                style={{ backgroundColor: '#2563eb' }} 
               >
                 <span className="spin-slow"><RefreshCw className="h-4 w-4" /></span>
                 Nueva conversación

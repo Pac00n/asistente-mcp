@@ -6,7 +6,6 @@ const nextConfig = {
     domains: ['lh3.googleusercontent.com', 'avatars.githubusercontent.com'],
   },
   experimental: {
-    appDir: true,
     serverComponentsExternalPackages: ['@prisma/client', 'bcryptjs'],
   },
   webpack: (config) => {

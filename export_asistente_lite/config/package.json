@@ -1,0 +1,43 @@
+{
+  "name": "asistente-mcp-exportado",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Asistente con integración MCP y OpenAI (estado de la rama main)",
+  "main": "index.js",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "@radix-ui/react-slot": "^1.2.2", // Estas podrían no ser necesarias si la UI de main no las usa
+    "@radix-ui/react-scroll-area": "^1.2.8", // o si se simplifican los componentes exportados.
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "cors": "^2.8.5", // Para mock-mcp-server
+    "express": "^5.1.0", // Para mock-mcp-server
+    "lucide-react": "^0.511.0", // Para iconos, si ChatInterface de main los usa
+    "next": "^14", // O la versión específica que estés usando
+    "next-themes": "^0.4.6", // Para ThemeProvider
+    "node-fetch": "^2.7.0", // Para mock-mcp-server y api route
+    "openai": "^4.100.0", // O la versión específica
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "tailwind-merge": "^3.3.0",
+    "tailwindcss-animate": "^1.0.7"
+    // Asegúrate de que las versiones coincidan con tu proyecto funcional 'main'
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "@types/react": "^18",
+    "@types/react-dom": "^18",
+    "autoprefixer": "^10.4.21", // O la versión de 'main'
+    "postcss": "^8.5.3",       // O la versión de 'main'
+    "tailwindcss": "^3.4.0", // RECOMENDADO: Usar Tailwind v3 estable, no v4 alfa.
+                                // Ajustar a la versión que funcionaba en 'main'.
+    "typescript": "^5.0.0"
+    // NOTA: Eliminado @tailwindcss/postcss7-compat si no es necesario para la v3 de Tailwind
+    // NOTA: @tailwindcss/postcss no es necesario si postcss.config.js usa `tailwindcss: {}` con v3
+  }
+}
