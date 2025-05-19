@@ -301,7 +301,7 @@ export default function ChatPage() {
         
         while ((eolIndex = buffer.indexOf('
 
-')) !== -1) { // Corrected line
+')) !== -1) { // THE CORRECTION IS HERE
           const line = buffer.substring(0, eolIndex).trim();
           buffer = buffer.substring(eolIndex + 2);
 
